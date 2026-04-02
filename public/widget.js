@@ -6,7 +6,26 @@
 ;(function (w, d) {
   'use strict'
 
-  var API_BASE = '__RAPTOR_API_BASE__'
+  // Resolve API base from the loaded widget script origin.
+  // Works for embeds like: <script src="https://your-app.vercel.app/widget.js">
+  function resolveApiBase() {
+    try {
+      var current = d.currentScript
+      if (current && current.src) {
+        return new URL(current.src).origin
+      }
+      var scripts = d.getElementsByTagName('script')
+      for (var i = scripts.length - 1; i >= 0; i--) {
+        var src = scripts[i] && scripts[i].src
+        if (src && src.indexOf('/widget.js') !== -1) {
+          return new URL(src).origin
+        }
+      }
+    } catch (e) {}
+    return w.location.origin
+  }
+
+  var API_BASE = resolveApiBase()
 
   function RaptorBot(config) {
     this.botId = config.botId
@@ -223,14 +242,19 @@
       var reader = res.body.getReader()
       var decoder = new TextDecoder()
       var full = ''
+      var sseBuffer = ''
 
       function read() {
         reader.read().then(function (result) {
           if (result.done) {
             self.messages.push({ role: 'assistant', content: full })
+            d.getElementById('raptor-send').disabled = false
+            d.getElementById('raptor-input').focus()
             return
           }
-          var lines = decoder.decode(result.value).split('\n')
+          sseBuffer += decoder.decode(result.value, { stream: true })
+          var lines = sseBuffer.split('\n')
+          sseBuffer = lines.pop() || ''
           lines.forEach(function (line) {
             if (!line.startsWith('data: ')) return
             var data = line.slice(6)
@@ -251,6 +275,7 @@
     }).catch(function (err) {
       self._hideTyping()
       self._addBotMessage('Sorry, something went wrong. Please try again.')
+      d.getElementById('raptor-send').disabled = false
     })
   }
 
